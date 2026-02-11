@@ -1,0 +1,36 @@
+services:
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+
+  dva506-lab1-project1:
+    build: .
+    container_name: python-app
+    working_dir: /workspace/app
+    volumes:
+      - .:/workspace
+    command: >
+      sh -c "PYTHONPATH=/workspace/app coverage run --source=src -m pytest &&
+             coverage xml -o /workspace/coverage.xml"
+
+  scanner:
+    image: sonarsource/sonar-scanner-cli
+    container_name: sonar-scanner
+    depends_on:
+      - sonarqube
+    volumes:
+      - .:/usr/src
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+      SONAR_TOKEN: squ_9cda86762789346c008e5278e1a754007da91a95
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
