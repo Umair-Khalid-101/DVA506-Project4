@@ -9,7 +9,7 @@ services:
       - sonarqube_extensions:/opt/sonarqube/extensions
       - sonarqube_logs:/opt/sonarqube/logs
 
-  dva506-lab1-project1:
+  dva506-lab1-project4:
     build: .
     container_name: python-app
     working_dir: /workspace/app
