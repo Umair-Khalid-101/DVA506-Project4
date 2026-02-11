@@ -9,14 +9,14 @@ services:
       - sonarqube_extensions:/opt/sonarqube/extensions
       - sonarqube_logs:/opt/sonarqube/logs
 
-  dva506-lab1-project4:
+  app:
     build: .
-    container_name: python-app
-    working_dir: /workspace/app
+    container_name: app
+    working_dir: /workspace/
     volumes:
       - .:/workspace
     command: >
-      sh -c "PYTHONPATH=/workspace/app coverage run --source=src -m pytest &&
+      sh -c "PYTHONPATH=/workspace/smartmove coverage run --source=smartmove -m pytest &&
              coverage xml -o /workspace/coverage.xml"
 
   scanner:
@@ -24,8 +24,9 @@ services:
     container_name: sonar-scanner
     depends_on:
       - sonarqube
+    working_dir: /workspace
     volumes:
-      - .:/usr/src
+      - .:/workspace
     environment:
       SONAR_HOST_URL: http://sonarqube:9000
       SONAR_TOKEN: squ_9cda86762789346c008e5278e1a754007da91a95
