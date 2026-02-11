@@ -1,0 +1,11 @@
+# Coverage
+.coverage 
+coverage.xml
+html/cov
+
+# Pytest
+.pytest_cache/
+
+# Python
+__pycache__/
+*.pyc
