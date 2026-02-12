@@ -1,13 +1,10 @@
-from domain.vehicle import Vehicle
-from domain.enums import VehicleType, City
 from core.cotroller import SmartMoveCentralController
+from setup.setup import bootstrap_system
 import time
 
 controller = SmartMoveCentralController()
 
-vehicle = Vehicle("V1", VehicleType.SCOOTER, City.LONDON)
-user = type("User", (), {"id": "U1"})()
+vehicles, users = bootstrap_system()
 
-rental = controller.start_rental(user, vehicle)
-time.sleep(2)
-controller.end_rental(vehicle)
+controller = SmartMoveCentralController()
+
