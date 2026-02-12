@@ -38,10 +38,11 @@ class SmartMoveCentralController:
             )
 
             self.active_rentals[vehicle.id] = rental
+            old_state, new_state = StateMachine.transition(vehicle, VehicleState.IN_USE)
 
             self.audit.record(
                 vehicle.id,
-                "AVAILABLE -> IN_USE",
+                f"{old_state.name} -> {new_state.name}",
                 "Rental started"
             )
 
@@ -60,12 +61,12 @@ class SmartMoveCentralController:
             rules = CITY_RULES[vehicle.city.value]
             rules.on_end_rental(rental)
 
-            vehicle.state = VehicleState.AVAILABLE
+            old_state, new_state = StateMachine.transition(vehicle, VehicleState.AVAILABLE)
             del self.active_rentals[vehicle.id]
 
             self.audit.record(
                 vehicle.id,
-                "IN_USE -> AVAILABLE",
+                f"{old_state.name} -> {new_state.name}",
                 f"Rental ended. Cost: {rental.cost}"
             )
 
