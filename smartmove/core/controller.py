@@ -79,6 +79,8 @@ class SmartMoveCentralController:
             if current_state == VehicleState.MAINTENANCE:
                 return
 
+            rules = CITY_RULES[vehicle.city.value]
+
             # --------------------------------------------------
             # Unauthorized movement (theft detection)
             # --------------------------------------------------
@@ -100,28 +102,60 @@ class SmartMoveCentralController:
                 return
 
             # --------------------------------------------------
+            # City movement validation (e.g. Rome zone restriction)
+            # --------------------------------------------------
+            if event.speed > 0:
+
+                # Update GPS before validation
+                vehicle.gps = (event.latitude, event.longitude)
+
+                try:
+                    is_valid = rules.validate_movement(vehicle)
+                except Exception as e:
+                    is_valid = False
+
+                if not is_valid and current_state == VehicleState.IN_USE:
+
+                    if StateMachine.validate(current_state, VehicleState.EMERGENCY_LOCK):
+
+                        old, new = StateMachine.transition(
+                            vehicle,
+                            VehicleState.EMERGENCY_LOCK
+                        )
+
+                        self.audit.record(
+                            vehicle.id,
+                            f"{old.name} -> {new.name}",
+                            "Emergency lock: Restricted zone entered"
+                        )
+
+                        rental = self.active_rentals.get(vehicle.id)
+                        if rental:
+                            rental.end()
+                            del self.active_rentals[vehicle.id]
+
+                    return
+
+            # --------------------------------------------------
             # Overheating
             # --------------------------------------------------
-            if event.temperature > 60:
+            if event.temperature > 60 and current_state == VehicleState.IN_USE:
 
-                if current_state == VehicleState.IN_USE:
+                old, new = StateMachine.transition(
+                    vehicle,
+                    VehicleState.EMERGENCY_LOCK
+                )
 
-                    old, new = StateMachine.transition(
-                        vehicle,
-                        VehicleState.EMERGENCY_LOCK
-                    )
+                self.audit.record(
+                    vehicle.id,
+                    f"{old.name} -> {new.name}",
+                    "Emergency lock: Overheating detected"
+                )
 
-                    self.audit.record(
-                        vehicle.id,
-                        f"{old.name} -> {new.name}",
-                        "Emergency lock: Overheating detected"
-                    )
-
-                    # Terminate rental if active
-                    rental = self.active_rentals.get(vehicle.id)
-                    if rental:
-                        rental.end()
-                        del self.active_rentals[vehicle.id]
+                rental = self.active_rentals.get(vehicle.id)
+                if rental:
+                    rental.end()
+                    del self.active_rentals[vehicle.id]
 
                 return
 
@@ -130,14 +164,12 @@ class SmartMoveCentralController:
             # --------------------------------------------------
             if event.battery < 5:
 
-                # If rental active, terminate first
                 if current_state == VehicleState.IN_USE:
                     rental = self.active_rentals.get(vehicle.id)
                     if rental:
                         rental.end()
                         del self.active_rentals[vehicle.id]
 
-                # Move to maintenance if allowed
                 if StateMachine.validate(vehicle.state, VehicleState.MAINTENANCE):
 
                     old, new = StateMachine.transition(
@@ -154,11 +186,10 @@ class SmartMoveCentralController:
                 return
 
             # --------------------------------------------------
-            # Recovery from emergency lock (optional behavior)
+            # Recovery from emergency lock
             # --------------------------------------------------
             if current_state == VehicleState.EMERGENCY_LOCK:
 
-                # If conditions are normal again, move to maintenance
                 if event.temperature <= 60 and event.battery >= 5:
 
                     if StateMachine.validate(current_state, VehicleState.MAINTENANCE):
@@ -175,5 +206,6 @@ class SmartMoveCentralController:
                         )
 
                 return
+
 
 
