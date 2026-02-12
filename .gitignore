@@ -9,3 +9,4 @@ html/cov
 # Python
 __pycache__/
 *.pyc
+/.vs
