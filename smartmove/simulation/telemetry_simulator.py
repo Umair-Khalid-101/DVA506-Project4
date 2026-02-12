@@ -37,7 +37,7 @@ class TelemetrySimulator(threading.Thread):
                 time.sleep(self.interval)
 
         except Exception as e:
-            print("❌ Telemetry thread crashed:", e)
+            print("Telemetry thread crashed:", e)
             raise
 
 

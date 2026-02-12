@@ -29,10 +29,10 @@ class SimulationEngine:
     def bootstrap(self):
 
         if vehicles_exist():
-            print("📦 Loading vehicles from disk")
+            print("Loading vehicles from disk")
             self.vehicles = load_vehicles()
         else:
-            print("🚗 Creating vehicle fleet")
+            print("Creating vehicle fleet")
             self.vehicles = VehicleFactory.create_fleet(
                 size=10_000,
                 city_distribution={
@@ -44,20 +44,20 @@ class SimulationEngine:
             save_vehicles(self.vehicles)
 
         if users_exist():
-            print("📦 Loading users from disk")
+            print("Loading users from disk")
             self.users = load_users()
         else:
-            print("👤 Creating users")
+            print("Creating users")
             self.users = UserFactory.create_users(2_000)
             save_users(self.users)
 
-        print("📡 Initializing telemetry for all vehicles")
+        print("Initializing telemetry for all vehicles")
 
         for vehicle in self.vehicles.values():
             snapshot = self.telemetry_factory.create_initial(vehicle)
             vehicle.telemetry = snapshot
 
-        print("✅ Telemetry initialized")
+        print("Telemetry initialized")
 
     # -------------------------
     # Start telemetry simulation
@@ -72,14 +72,14 @@ class SimulationEngine:
         )
 
         self.telemetry_simulator.start()
-        print("🚀 Telemetry simulation running...")
+        print("Telemetry simulation running...")
 
     # -------------------------
     # Stop simulation
     # -------------------------
     def stop(self):
         if self.telemetry_simulator:
-            print("🛑 Stopping simulation...")
+            print("Stopping simulation...")
             self.telemetry_simulator.stop()
             self.telemetry_simulator.join()
-            print("✅ Simulation stopped")
+            print("Simulation stopped")
