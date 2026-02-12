@@ -73,16 +73,109 @@ class SmartMoveCentralController:
             return rental
     def process_telemetry_event(self, vehicle, event):
         with vehicle.lock:
-            print(
-            f"[TELEMETRY] "
-            f"Vehicle={vehicle.id} | "
-            f"Battery={event.battery:.2f}% | "
-            f"Temp={event.temperature:.2f}°C"
+
+            current_state = vehicle.state
+
+            # Do nothing if already in maintenance
+            if current_state == VehicleState.MAINTENANCE:
+                return
+
+            # --------------------------------------------------
+            # Unauthorized movement (theft detection)
+            # --------------------------------------------------
+            if current_state != VehicleState.IN_USE and event.speed > 1:
+
+                if StateMachine.validate(current_state, VehicleState.EMERGENCY_LOCK):
+
+                    old, new = StateMachine.transition(
+                        vehicle,
+                        VehicleState.EMERGENCY_LOCK
         )
 
+                    self.audit.record(
+                        vehicle.id,
+                        f"{old.name} -> {new.name}",
+                        "Emergency lock: Unauthorized movement detected"
+                    )
+
+                return
+
+            # --------------------------------------------------
+            # Overheating
+            # --------------------------------------------------
             if event.temperature > 60:
                 print(f"🔥 Overheat detected for {vehicle.id}")
 
+                if current_state == VehicleState.IN_USE:
+
+                    old, new = StateMachine.transition(
+                        vehicle,
+                        VehicleState.EMERGENCY_LOCK
+                    )
+
+                    self.audit.record(
+                        vehicle.id,
+                        f"{old.name} -> {new.name}",
+                        "Emergency lock: Overheating detected"
+                    )
+
+                    # Terminate rental if active
+                    rental = self.active_rentals.get(vehicle.id)
+                    if rental:
+                        rental.end()
+                        del self.active_rentals[vehicle.id]
+
+                return
+
+            # --------------------------------------------------
+            # Critical low battery
+            # --------------------------------------------------
             if event.battery < 5:
-                print(f"🔋 Low battery for {vehicle.id}")
+
+                # If rental active, terminate first
+                if current_state == VehicleState.IN_USE:
+                    rental = self.active_rentals.get(vehicle.id)
+                    if rental:
+                        rental.end()
+                        del self.active_rentals[vehicle.id]
+
+                # Move to maintenance if allowed
+                if StateMachine.validate(vehicle.state, VehicleState.MAINTENANCE):
+
+                    old, new = StateMachine.transition(
+                        vehicle,
+                        VehicleState.MAINTENANCE
+                    )
+
+                    self.audit.record(
+                        vehicle.id,
+                        f"{old.name} -> {new.name}",
+                        "Maintenance required: Battery critically low"
+                    )
+
+                return
+
+            # --------------------------------------------------
+            # Recovery from emergency lock (optional behavior)
+            # --------------------------------------------------
+            if current_state == VehicleState.EMERGENCY_LOCK:
+
+                # If conditions are normal again, move to maintenance
+                if event.temperature <= 60 and event.battery >= 5:
+
+                    if StateMachine.validate(current_state, VehicleState.MAINTENANCE):
+
+                        old, new = StateMachine.transition(
+                            vehicle,
+                            VehicleState.MAINTENANCE
+                        )
+
+                        self.audit.record(
+                            vehicle.id,
+                            f"{old.name} -> {new.name}",
+                            "Emergency resolved, moved to maintenance"
+                        )
+
+                return
+
 
