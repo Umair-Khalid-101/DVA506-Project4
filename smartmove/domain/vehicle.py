@@ -14,6 +14,8 @@ class Vehicle:
         
         # Critical for concurrency
         self.lock = threading.Lock()
+        self.helmet_present = True
+
 
     def is_in_use(self):
          return self.state == VehicleState.IN_USE

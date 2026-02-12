@@ -1,7 +1,7 @@
 from domain.enums import VehicleState
 
 VALID_TRANSITIONS = {
-    VehicleState.AVAILABLE: {VehicleState.RESERVED, VehicleState.MAINTENANCE},
+    VehicleState.AVAILABLE: {VehicleState.RESERVED,VehicleState.IN_USE, VehicleState.MAINTENANCE},
     VehicleState.RESERVED: {VehicleState.IN_USE, VehicleState.AVAILABLE},
     VehicleState.IN_USE: {
         VehicleState.AVAILABLE,

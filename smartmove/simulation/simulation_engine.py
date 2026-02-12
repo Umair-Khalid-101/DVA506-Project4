@@ -2,6 +2,8 @@ from .factories.vehicle_factory import VehicleFactory
 from .factories.user_factory import UserFactory
 from .factories.telemetry_factory import TelemetryFactory
 from .telemetry_simulator import TelemetrySimulator
+from .rental_simulator import RentalSimulator
+
 
 from domain.enums import City
 from persistence.storage import (
@@ -22,6 +24,8 @@ class SimulationEngine:
         self.users = {}
         self.telemetry_factory = TelemetryFactory()
         self.telemetry_simulator = None
+        self.rental_simulator = None
+
 
     # -------------------------
     # Setup world
@@ -73,6 +77,14 @@ class SimulationEngine:
 
         self.telemetry_simulator.start()
         print("Telemetry simulation running...")
+        self.rental_simulator = RentalSimulator(
+        controller=self.controller,
+        vehicles=self.vehicles,
+        users=self.users,
+        interval=2.0)
+    
+
+        self.rental_simulator.start()
 
     # -------------------------
     # Stop simulation
@@ -83,3 +95,6 @@ class SimulationEngine:
             self.telemetry_simulator.stop()
             self.telemetry_simulator.join()
             print("Simulation stopped")
+        if self.rental_simulator:
+            self.rental_simulator.stop()
+            self.rental_simulator.join()
