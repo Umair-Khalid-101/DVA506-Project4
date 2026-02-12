@@ -17,3 +17,15 @@ class StateMachine:
     @staticmethod
     def validate(current, target):
         return target in VALID_TRANSITIONS.get(current, set())
+        
+    @staticmethod
+    def transition(vehicle, target_state):
+        current = vehicle.state
+
+        if not StateMachine.validate(current, target_state):
+            raise Exception(
+                f"Invalid transition: {current} -> {target_state}"
+            )
+
+        vehicle.state = target_state
+        return current, target_state
