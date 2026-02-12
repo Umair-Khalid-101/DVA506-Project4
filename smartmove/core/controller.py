@@ -29,7 +29,6 @@ class SmartMoveCentralController:
             rules = CITY_RULES[vehicle.city.value]
             rules.on_unlock(vehicle, user)
 
-            vehicle.state = VehicleState.IN_USE
 
             rental = Rental(
                 rental_id=str(uuid.uuid4()),
@@ -90,7 +89,7 @@ class SmartMoveCentralController:
                     old, new = StateMachine.transition(
                         vehicle,
                         VehicleState.EMERGENCY_LOCK
-        )
+                    )
 
                     self.audit.record(
                         vehicle.id,
@@ -104,7 +103,6 @@ class SmartMoveCentralController:
             # Overheating
             # --------------------------------------------------
             if event.temperature > 60:
-                print(f"🔥 Overheat detected for {vehicle.id}")
 
                 if current_state == VehicleState.IN_USE:
 
