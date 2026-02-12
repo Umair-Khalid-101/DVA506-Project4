@@ -4,8 +4,7 @@ from domain.enums import City
 
 @dataclass(frozen=True)
 class TelemetryEvent:
-    vehicle_id: str
-    user_id: str | None
+    vehicle_id: str   
     city: City
     latitude: float
     longitude: float

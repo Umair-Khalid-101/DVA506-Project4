@@ -70,3 +70,18 @@ class SmartMoveCentralController:
             )
 
             return rental
+    def process_telemetry_event(self, vehicle, event):
+        with vehicle.lock:
+            print(
+            f"[TELEMETRY] "
+            f"Vehicle={vehicle.id} | "
+            f"Battery={event.battery:.2f}% | "
+            f"Temp={event.temperature:.2f}°C"
+        )
+
+            if event.temperature > 60:
+                print(f"🔥 Overheat detected for {vehicle.id}")
+
+            if event.battery < 5:
+                print(f"🔋 Low battery for {vehicle.id}")
+
