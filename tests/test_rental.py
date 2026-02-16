@@ -1,6 +1,6 @@
 from smartmove.domain.vehicle import Vehicle
 from smartmove.domain.enums import VehicleType, City
-from smartmove.core.cotroller import SmartMoveCentralController
+from smartmove.core.controller import SmartMoveCentralController
 from smartmove.core.pricing import PricingEngine
 import time
 
