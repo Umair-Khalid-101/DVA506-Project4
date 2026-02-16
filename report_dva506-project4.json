@@ -1,0 +1,11 @@
+{
+    "project": "DVA506 - Project 4",
+    "analysis_time": "2026-02-16 16:29:01",
+    "results": {
+        "coverage": "41.2",
+        "bugs": "0",
+        "code_smells": "13",
+        "duplicated_lines_density": "0.0",
+        "vulnerabilities": "0"
+    }
+}
