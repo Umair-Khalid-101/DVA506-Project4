@@ -31,3 +31,6 @@ def create_report():
 
     except Exception as e:
         print(f"Error during the save of the report: {e}")
+
+
+create_report()
