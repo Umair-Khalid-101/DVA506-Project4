@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime
-from domain.enums import City
 
-@dataclass(frozen=True)
+
+@dataclass
 class TelemetryEvent:
-    vehicle_id: str   
-    city: City
+    vehicle_id: str
+    city: object
     latitude: float
     longitude: float
     speed: float

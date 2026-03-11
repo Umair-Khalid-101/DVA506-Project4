@@ -1,51 +1,110 @@
-# persistence/audit_log.py
 import hashlib
 import json
 import os
+import threading
+from datetime import datetime
+
+from core.exceptions import AuditWriteError, IntegrityCheckError
+
 
 class AuditLog:
-    def __init__(self, path="data/audit.log"):
-        self.path = path
-        self.last_checksum = self._load_last_checksum()
+    """
+    Thread-safe append-only audit log with sequential IDs and checksum chaining.
+    Improves reliability and integrity.
+    """
 
-    def _load_last_checksum(self):
-        if not os.path.exists(self.path):
-            return "GENESIS"
+    def __init__(self, filepath="data/audit.log"):
+        self.filepath = filepath
+        print("AUDIT ABS PATH:", os.path.abspath(self.filepath))
+        self.filepath = filepath
+        self._lock = threading.Lock()
 
-        try:
-            with open(self.path, "r") as f:
-                lines = f.readlines()
-                if not lines:
-                    return "GENESIS"
+        directory = os.path.dirname(self.filepath)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
 
-                last_entry = json.loads(lines[-1])
-                return last_entry.get("checksum", "GENESIS")
-        except Exception:
-            # If file is corrupted, force safe mode
-            return "GENESIS"
+        if not os.path.exists(self.filepath):
+            with open(self.filepath, "w", encoding="utf-8"):
+                pass
 
-    def _checksum(self, data):
-        return hashlib.sha256(data.encode()).hexdigest()
+    def _read_entries(self):
+        entries = []
+        if not os.path.exists(self.filepath):
+            return entries
+
+        with open(self.filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entries.append(json.loads(line))
+        return entries
+
+    def _hash_payload(self, payload: str) -> str:
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def record(self, entity_id, action, reason):
-        entry = {
-            "entity_id": entity_id,
-            "action": action,
-            "reason": reason,
-            "prev_checksum": self.last_checksum
-        }
+        print("WRITING TO:", os.path.abspath(self.filepath))
+        print("AUDIT RECORD CALLED:", entity_id, action, reason)
+        with self._lock:
+            try:
+                entries = self._read_entries()
 
-        raw = json.dumps(entry, sort_keys=True)
-        checksum = self._checksum(raw)
-        entry["checksum"] = checksum
+                previous_id = entries[-1]["id"] if entries else 0
+                previous_checksum = entries[-1]["checksum"] if entries else "GENESIS"
 
-        try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+                entry = {
+                    "id": previous_id + 1,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "entity_id": entity_id,
+                    "action": action,
+                    "reason": reason,
+                    "previous_checksum": previous_checksum,
+                }
 
-            with open(self.path, "a") as f:
-                f.write(json.dumps(entry) + "\n")
+                checksum_basis = json.dumps(entry, sort_keys=True)
+                entry["checksum"] = self._hash_payload(checksum_basis)
 
-            self.last_checksum = checksum
+                with open(self.filepath, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry) + "\n")
 
-        except Exception as e:
-            raise Exception("Audit write failed — rollback required") from e
+            except Exception as exc:
+                raise AuditWriteError(f"Failed to write audit log: {exc}") from exc
+
+    def verify_integrity(self):
+        with self._lock:
+            entries = self._read_entries()
+
+            if not entries:
+                return True
+
+            expected_previous = "GENESIS"
+            expected_id = 1
+
+            for entry in entries:
+                if entry["id"] != expected_id:
+                    raise IntegrityCheckError(
+                        f"Audit log ID sequence broken at entry {entry}"
+                    )
+
+                if entry["previous_checksum"] != expected_previous:
+                    raise IntegrityCheckError(
+                        f"Audit checksum chain broken at entry {entry['id']}"
+                    )
+
+                checksum = entry["checksum"]
+                entry_without_checksum = dict(entry)
+                del entry_without_checksum["checksum"]
+
+                checksum_basis = json.dumps(entry_without_checksum, sort_keys=True)
+                recomputed = self._hash_payload(checksum_basis)
+
+                if checksum != recomputed:
+                    raise IntegrityCheckError(
+                        f"Audit checksum mismatch at entry {entry['id']}"
+                    )
+
+                expected_previous = checksum
+                expected_id += 1
+
+            return True

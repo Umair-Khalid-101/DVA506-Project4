@@ -1,211 +1,49 @@
-from core.state_machine import StateMachine
 from persistence.audit_log import AuditLog
-from rules.london import LondonRules
-from rules.milan import MilanRules
-from rules.rome import RomeRules
-from core.pricing import PricingEngine
-from domain.enums import VehicleState
-from domain.rental import Rental
-import uuid
+from core.rental_service import RentalService
+from core.telemetry_service import TelemetryService
 
-CITY_RULES = {
-    "london": LondonRules(),
-    "milan": MilanRules(),
-    "rome": RomeRules()
-}
 
 class SmartMoveCentralController:
-    def __init__(self):
-        self.audit = AuditLog()
+   
+
+    def __init__(self, vehicles=None, users=None, audit_log=None):
+        self.vehicles = vehicles or {}
+        self.users = users or {}
+        self.audit = audit_log or AuditLog()
         self.active_rentals = {}
 
+        self.rental_service = RentalService(
+            vehicles=self.vehicles,
+            users=self.users,
+            audit_log=self.audit,
+            active_rentals=self.active_rentals
+        )
+
+        self.telemetry_service = TelemetryService(
+            vehicles=self.vehicles,
+            audit_log=self.audit,
+            active_rentals=self.active_rentals,
+            rental_service=self.rental_service
+        )
+
+    def bind_runtime_state(self, vehicles, users):
+        """
+        Allows simulation/bootstrap to inject loaded state after construction.
+        Keeps dependencies explicit and improves testability.
+        """
+        self.vehicles = vehicles
+        self.users = users
+
+        self.rental_service.vehicles = vehicles
+        self.rental_service.users = users
+
+        self.telemetry_service.vehicles = vehicles
 
     def start_rental(self, user, vehicle):
-        with vehicle.lock:
-            if vehicle.state != VehicleState.AVAILABLE:
-                raise Exception("Vehicle not available")
-
-            # City rules before unlock
-            rules = CITY_RULES[vehicle.city.value]
-            rules.on_unlock(vehicle, user)
-
-
-            rental = Rental(
-                rental_id=str(uuid.uuid4()),
-                user_id=user.id,
-                vehicle_id=vehicle.id
-            )
-
-            self.active_rentals[vehicle.id] = rental
-            old_state, new_state = StateMachine.transition(vehicle, VehicleState.IN_USE)
-
-            self.audit.record(
-                vehicle.id,
-                f"{old_state.name} -> {new_state.name}",
-                "Rental started"
-            )
-
-            return rental
+        return self.rental_service.start_rental(user, vehicle)
 
     def end_rental(self, vehicle):
-        with vehicle.lock:
-            rental = self.active_rentals.get(vehicle.id)
-            if not rental:
-                raise Exception("No active rental")
+        return self.rental_service.end_rental(vehicle)
 
-            rental.end()
-            rental.cost = PricingEngine.calculate(rental)
-
-            # City-specific billing rules
-            rules = CITY_RULES[vehicle.city.value]
-            rules.on_end_rental(rental)
-
-            old_state, new_state = StateMachine.transition(vehicle, VehicleState.AVAILABLE)
-            del self.active_rentals[vehicle.id]
-
-            self.audit.record(
-                vehicle.id,
-                f"{old_state.name} -> {new_state.name}",
-                f"Rental ended. Cost: {rental.cost}"
-            )
-
-            return rental
     def process_telemetry_event(self, vehicle, event):
-        with vehicle.lock:
-
-            current_state = vehicle.state
-
-            # Do nothing if already in maintenance
-            if current_state == VehicleState.MAINTENANCE:
-                return
-
-            rules = CITY_RULES[vehicle.city.value]
-
-            # --------------------------------------------------
-            # Unauthorized movement (theft detection)
-            # --------------------------------------------------
-            if current_state != VehicleState.IN_USE and event.speed > 1:
-
-                if StateMachine.validate(current_state, VehicleState.EMERGENCY_LOCK):
-
-                    old, new = StateMachine.transition(
-                        vehicle,
-                        VehicleState.EMERGENCY_LOCK
-                    )
-
-                    self.audit.record(
-                        vehicle.id,
-                        f"{old.name} -> {new.name}",
-                        "Emergency lock: Unauthorized movement detected"
-                    )
-
-                return
-
-            # --------------------------------------------------
-            # City movement validation (e.g. Rome zone restriction)
-            # --------------------------------------------------
-            if event.speed > 0:
-
-                # Update GPS before validation
-                vehicle.gps = (event.latitude, event.longitude)
-
-                try:
-                    is_valid = rules.validate_movement(vehicle)
-                except Exception as e:
-                    is_valid = False
-
-                if not is_valid and current_state == VehicleState.IN_USE:
-
-                    if StateMachine.validate(current_state, VehicleState.EMERGENCY_LOCK):
-
-                        old, new = StateMachine.transition(
-                            vehicle,
-                            VehicleState.EMERGENCY_LOCK
-                        )
-
-                        self.audit.record(
-                            vehicle.id,
-                            f"{old.name} -> {new.name}",
-                            "Emergency lock: Restricted zone entered"
-                        )
-
-                        rental = self.active_rentals.get(vehicle.id)
-                        if rental:
-                            rental.end()
-                            del self.active_rentals[vehicle.id]
-
-                    return
-
-            # --------------------------------------------------
-            # Overheating
-            # --------------------------------------------------
-            if event.temperature > 60 and current_state == VehicleState.IN_USE:
-
-                old, new = StateMachine.transition(
-                    vehicle,
-                    VehicleState.EMERGENCY_LOCK
-                )
-
-                self.audit.record(
-                    vehicle.id,
-                    f"{old.name} -> {new.name}",
-                    "Emergency lock: Overheating detected"
-                )
-
-                rental = self.active_rentals.get(vehicle.id)
-                if rental:
-                    rental.end()
-                    del self.active_rentals[vehicle.id]
-
-                return
-
-            # --------------------------------------------------
-            # Critical low battery
-            # --------------------------------------------------
-            if event.battery < 5:
-
-                if current_state == VehicleState.IN_USE:
-                    rental = self.active_rentals.get(vehicle.id)
-                    if rental:
-                        rental.end()
-                        del self.active_rentals[vehicle.id]
-
-                if StateMachine.validate(vehicle.state, VehicleState.MAINTENANCE):
-
-                    old, new = StateMachine.transition(
-                        vehicle,
-                        VehicleState.MAINTENANCE
-                    )
-
-                    self.audit.record(
-                        vehicle.id,
-                        f"{old.name} -> {new.name}",
-                        "Maintenance required: Battery critically low"
-                    )
-
-                return
-
-            # --------------------------------------------------
-            # Recovery from emergency lock
-            # --------------------------------------------------
-            if current_state == VehicleState.EMERGENCY_LOCK:
-
-                if event.temperature <= 60 and event.battery >= 5:
-
-                    if StateMachine.validate(current_state, VehicleState.MAINTENANCE):
-
-                        old, new = StateMachine.transition(
-                            vehicle,
-                            VehicleState.MAINTENANCE
-                        )
-
-                        self.audit.record(
-                            vehicle.id,
-                            f"{old.name} -> {new.name}",
-                            "Emergency resolved, moved to maintenance"
-                        )
-
-                return
-
-
-
+        return self.telemetry_service.process_telemetry_event(vehicle, event)
