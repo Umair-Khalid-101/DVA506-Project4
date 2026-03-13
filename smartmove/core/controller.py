@@ -1,6 +1,6 @@
 from persistence.audit_log import AuditLog
-from core.rental_service import RentalService
-from core.telemetry_service import TelemetryService
+from core.services.rental_service import RentalService
+from core.services.telemetry_service import TelemetryService
 
 
 class SmartMoveCentralController:
