@@ -1,81 +1,145 @@
 import json
 import os
-from domain.enums import VehicleType, City, VehicleState
+import tempfile
+
 from domain.vehicle import Vehicle
 from domain.user import User
+from domain.enums import VehicleType, City, VehicleState
 
-DATA_DIR = "data"
-VEHICLE_PATH = f"{DATA_DIR}/vehicles.json"
-USER_PATH = f"{DATA_DIR}/users.json"
-
-def vehicles_exist() -> bool:
-    return os.path.exists(VEHICLE_PATH)
+VEHICLES_FILE = "data/vehicles.json"
+USERS_FILE = "data/users.json"
 
 
-def users_exist() -> bool:
-    return os.path.exists(USER_PATH)
+def _atomic_write_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        delete=False,
+        encoding="utf-8",
+        dir=os.path.dirname(path)
+    ) as tmp:
+        json.dump(data, tmp, indent=2)
+        temp_name = tmp.name
+
+    os.replace(temp_name, path)
 
 
-def load_vehicles() -> dict:
-    with open(VEHICLE_PATH) as f:
+def vehicles_exist():
+    return os.path.exists(VEHICLES_FILE)
+
+
+def users_exist():
+    return os.path.exists(USERS_FILE)
+
+
+def save_vehicles(vehicles):
+    data = []
+    for vehicle in vehicles.values():
+        data.append({
+            "id": vehicle.id,
+            "type": vehicle.type.value,
+            "city": vehicle.city.value,
+            "state": vehicle.state.value,
+            "gps": list(vehicle.gps),
+            "battery": vehicle.battery,
+            "temperature": vehicle.temperature,
+            "helmet_present": getattr(vehicle, "helmet_present", True)
+        })
+
+    _atomic_write_json(VEHICLES_FILE, data)
+
+
+def load_vehicles():
+    with open(VEHICLES_FILE, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
-        vehicles = {}
-    for vid, v in raw.items():
-        vehicle = Vehicle(
-            vehicle_id=v["id"],
-            vtype=VehicleType(v["type"]),
-            city=City(v["city"])
-        )
-        vehicle.state = VehicleState(v["state"])
-        vehicles[vid] = vehicle
+    vehicles = {}
 
-    return vehicles
+    # Case 1: new format -> list of dicts
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
 
-def save_vehicles(vehicles: dict):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(VEHICLE_PATH, "w") as f:
-        json.dump(
-            {
-                vid: {
-                    "id": v.id,
-                    "type": v.type.value,
-                    "city": v.city.value,
-                    "state": v.state.value
-                }
-                for vid, v in vehicles.items()
-            },
-            f,
-            indent=2
-        )
+            vehicle = Vehicle(
+                vehicle_id=item["id"],
+                vtype=VehicleType(item["type"]),
+                city=City(item["city"])
+            )
+            vehicle.state = VehicleState(item.get("state", VehicleState.AVAILABLE.value))
+            vehicle.gps = tuple(item.get("gps", [0.0, 0.0]))
+            vehicle.battery = item.get("battery", 100)
+            vehicle.temperature = item.get("temperature", 25)
+            vehicle.helmet_present = item.get("helmet_present", True)
+
+            vehicles[vehicle.id] = vehicle
+
+        return vehicles
+
+    # Case 2: old format -> dict keyed by vehicle id
+    if isinstance(raw, dict):
+        for vehicle_id, item in raw.items():
+            if not isinstance(item, dict):
+                continue
+
+            vehicle = Vehicle(
+                vehicle_id=vehicle_id,
+                vtype=VehicleType(item["type"]),
+                city=City(item["city"])
+            )
+            vehicle.state = VehicleState(item.get("state", VehicleState.AVAILABLE.value))
+            vehicle.gps = tuple(item.get("gps", [0.0, 0.0]))
+            vehicle.battery = item.get("battery", 100)
+            vehicle.temperature = item.get("temperature", 25)
+            vehicle.helmet_present = item.get("helmet_present", True)
+
+            vehicles[vehicle.id] = vehicle
+
+        return vehicles
+
+    raise ValueError("Unsupported vehicles.json format")
 
 
-def load_users() -> dict:
-    with open(USER_PATH) as f:
+def save_users(users):
+    data = []
+    for user in users.values():
+        data.append({
+            "id": user.id,
+            "name": user.name
+        })
+
+    _atomic_write_json(USERS_FILE, data)
+
+
+def load_users():
+    with open(USERS_FILE, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
-    return {
-        uid: User(u["id"], u["name"])
-        for uid, u in raw.items()
-    }
+    users = {}
 
+    # Case 1: new format -> list of dicts
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
 
-def save_users(users: dict):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(USER_PATH, "w") as f:
-        json.dump(
-            {
-                uid: {"id": u.id, "name": u.name}
-                for uid, u in users.items()
-            },
-            f,
-            indent=2
-        )
+            user = User(user_id=item["id"], name=item["name"])
+            users[user.id] = user
 
-def save_json(path, data):
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+        return users
 
-def load_json(path):
-    with open(path) as f:
-        return json.load(f)
+    # Case 2: old format -> dict keyed by user id
+    if isinstance(raw, dict):
+        for user_id, item in raw.items():
+            if isinstance(item, dict):
+                name = item.get("name", user_id)
+            else:
+                name = str(item)
+
+            user = User(user_id=user_id, name=name)
+            users[user.id] = user
+
+        return users
+
+    raise ValueError("Unsupported users.json format")
