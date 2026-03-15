@@ -6,7 +6,8 @@ VALID_TRANSITIONS = {
     VehicleState.AVAILABLE: {
         VehicleState.RESERVED,
         VehicleState.IN_USE,
-        VehicleState.MAINTENANCE
+        VehicleState.MAINTENANCE,
+        VehicleState.EMERGENCY_LOCK
     },
     VehicleState.RESERVED: {
         VehicleState.IN_USE,

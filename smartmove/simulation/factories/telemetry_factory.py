@@ -1,6 +1,5 @@
 import random
 from datetime import datetime
-
 from domain.telemetry_snapshot import TelemetrySnapshot
 from domain.telemetry_event import TelemetryEvent
 from domain.enums import VehicleState
@@ -62,5 +61,5 @@ class TelemetryFactory:
             speed=snapshot.speed,
             battery=snapshot.battery,
             temperature=snapshot.temperature,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now()
         )

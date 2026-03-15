@@ -56,7 +56,6 @@ def load_vehicles():
 
     vehicles = {}
 
-    # Case 1: new format -> list of dicts
     if isinstance(raw, list):
         for item in raw:
             if not isinstance(item, dict):
@@ -64,27 +63,6 @@ def load_vehicles():
 
             vehicle = Vehicle(
                 vehicle_id=item["id"],
-                vtype=VehicleType(item["type"]),
-                city=City(item["city"])
-            )
-            vehicle.state = VehicleState(item.get("state", VehicleState.AVAILABLE.value))
-            vehicle.gps = tuple(item.get("gps", [0.0, 0.0]))
-            vehicle.battery = item.get("battery", 100)
-            vehicle.temperature = item.get("temperature", 25)
-            vehicle.helmet_present = item.get("helmet_present", True)
-
-            vehicles[vehicle.id] = vehicle
-
-        return vehicles
-
-    # Case 2: old format -> dict keyed by vehicle id
-    if isinstance(raw, dict):
-        for vehicle_id, item in raw.items():
-            if not isinstance(item, dict):
-                continue
-
-            vehicle = Vehicle(
-                vehicle_id=vehicle_id,
                 vtype=VehicleType(item["type"]),
                 city=City(item["city"])
             )
@@ -118,26 +96,12 @@ def load_users():
 
     users = {}
 
-    # Case 1: new format -> list of dicts
     if isinstance(raw, list):
         for item in raw:
             if not isinstance(item, dict):
                 continue
 
             user = User(user_id=item["id"], name=item["name"])
-            users[user.id] = user
-
-        return users
-
-    # Case 2: old format -> dict keyed by user id
-    if isinstance(raw, dict):
-        for user_id, item in raw.items():
-            if isinstance(item, dict):
-                name = item.get("name", user_id)
-            else:
-                name = str(item)
-
-            user = User(user_id=user_id, name=name)
             users[user.id] = user
 
         return users

@@ -24,8 +24,7 @@ class AuditLog:
             os.makedirs(directory, exist_ok=True)
 
         if not os.path.exists(self.filepath):
-            with open(self.filepath, "w", encoding="utf-8"):
-                pass
+            open(self.filepath, "a", encoding="utf-8").close()
 
     def _read_entries(self):
         entries = []
@@ -55,7 +54,7 @@ class AuditLog:
 
                 entry = {
                     "id": previous_id + 1,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now().isoformat(),
                     "entity_id": entity_id,
                     "action": action,
                     "reason": reason,
@@ -74,10 +73,6 @@ class AuditLog:
     def verify_integrity(self):
         with self._lock:
             entries = self._read_entries()
-
-            if not entries:
-                return True
-
             expected_previous = "GENESIS"
             expected_id = 1
 
@@ -106,5 +101,4 @@ class AuditLog:
 
                 expected_previous = checksum
                 expected_id += 1
-
             return True

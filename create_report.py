@@ -4,7 +4,7 @@ import json
 
 PROJECT_KEY = "dva506-project4"
 PROJECT_NAME = "DVA506 - Project 4"
-SONAR_TOKEN = "squ_9cda86762789346c008e5278e1a754007da91a95"
+SONAR_TOKEN = "squ_e40fb6f4a5083654960cc07f377a04a88649fcbc"
 
 def create_report():
     metrics = "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
