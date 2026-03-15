@@ -27,107 +27,122 @@ class TelemetryService:
         vehicle = self.vehicles[vehicle_id]
         self.process_telemetry_event(vehicle, event)
 
-    def process_telemetry_event(self, vehicle, event):
-        with vehicle.lock:
-            current_state = vehicle.state
+    def _sync_telemetry(self, vehicle, event):
+        # keep vehicle runtime telemetry in sync
+        vehicle.gps = (event.latitude, event.longitude)
+        vehicle.battery = event.battery
+        vehicle.temperature = event.temperature
 
-            # keep vehicle runtime telemetry in sync
-            vehicle.gps = (event.latitude, event.longitude)
-            vehicle.battery = event.battery
-            vehicle.temperature = event.temperature
-
-            # maintenance vehicles remain isolated from regular telemetry flow
-            if current_state == VehicleState.MAINTENANCE:
-                return
-
-            rules = CITY_RULES[vehicle.city.value]
-
-            # Unauthorized movement: movement without active usage
-            if current_state != VehicleState.IN_USE and event.speed > 1:
-                if StateMachine.validate(current_state, VehicleState.EMERGENCY_LOCK):
+    def _handle_unauthorized_movement(self, vehicle, event):
+        # Unauthorized movement: movement without active usage
+        if vehicle.state != VehicleState.IN_USE and event.speed > 1:
+            if StateMachine.validate(vehicle.state, VehicleState.EMERGENCY_LOCK):
+                old_state, new_state = StateMachine.transition(
+                    vehicle,
+                    VehicleState.EMERGENCY_LOCK
+                )
+                self.audit.record(
+                    entity_id=vehicle.id,
+                    action=f"{old_state.name} -> {new_state.name}",
+                    reason="Emergency lock: Unauthorized movement detected"
+                )
+        
+    def _handle_city_restrictions(self, vehicle, event):
+        # City-specific movement validation (Rome restricted zone etc.)
+        rules = CITY_RULES[vehicle.city.value]
+        if event.speed > 0:
+            is_valid = rules.validate_movement(vehicle)
+            if not is_valid and vehicle.state == VehicleState.IN_USE:
+                if StateMachine.validate(vehicle.state, VehicleState.EMERGENCY_LOCK):
                     old_state, new_state = StateMachine.transition(
                         vehicle,
                         VehicleState.EMERGENCY_LOCK
                     )
+
                     self.audit.record(
                         entity_id=vehicle.id,
                         action=f"{old_state.name} -> {new_state.name}",
-                        reason="Emergency lock: Unauthorized movement detected"
+                        reason="Emergency lock: Restricted zone entered"
                     )
-                return
 
-            # City-specific movement validation (Rome restricted zone etc.)
-            if event.speed > 0:
-                is_valid = rules.validate_movement(vehicle)
-                if not is_valid and current_state == VehicleState.IN_USE:
-                    if StateMachine.validate(current_state, VehicleState.EMERGENCY_LOCK):
-                        old_state, new_state = StateMachine.transition(
-                            vehicle,
-                            VehicleState.EMERGENCY_LOCK
-                        )
+                    self.rental_service.terminate_active_rental(
+                        vehicle,
+                        "Rental terminated due to restricted zone entry"
+                    )
+            
+    def _handle_overheating(self, vehicle, event):
+        # Overheating
+        if event.temperature > 60 and vehicle.state == VehicleState.IN_USE:
+            old_state, new_state = StateMachine.transition(
+                vehicle,
+                VehicleState.EMERGENCY_LOCK
+            )
 
-                        self.audit.record(
-                            entity_id=vehicle.id,
-                            action=f"{old_state.name} -> {new_state.name}",
-                            reason="Emergency lock: Restricted zone entered"
-                        )
+            self.audit.record(
+                entity_id=vehicle.id,
+                action=f"{old_state.name} -> {new_state.name}",
+                reason="Emergency lock: Overheating detected"
+            )
 
-                        self.rental_service.terminate_active_rental(
-                            vehicle,
-                            "Rental terminated due to restricted zone entry"
-                        )
-                    return
+            self.rental_service.terminate_active_rental(
+                vehicle,
+                "Rental terminated due to overheating"
+            )
 
-            # Overheating
-            if event.temperature > 60 and current_state == VehicleState.IN_USE:
+    def _handle_critical_battery(self, vehicle, event):
+        # Critical battery
+        if event.battery < 5:
+            if vehicle.state == VehicleState.IN_USE:
+                self.rental_service.terminate_active_rental(
+                    vehicle,
+                    "Rental terminated due to critically low battery"
+                )
+
+            if StateMachine.validate(vehicle.state, VehicleState.MAINTENANCE):
                 old_state, new_state = StateMachine.transition(
                     vehicle,
-                    VehicleState.EMERGENCY_LOCK
+                    VehicleState.MAINTENANCE
                 )
 
                 self.audit.record(
                     entity_id=vehicle.id,
                     action=f"{old_state.name} -> {new_state.name}",
-                    reason="Emergency lock: Overheating detected"
+                    reason="Maintenance required: Battery critically low"
                 )
 
-                self.rental_service.terminate_active_rental(
-                    vehicle,
-                    "Rental terminated due to overheating"
-                )
-                return
-
-            # Critical battery
-            if event.battery < 5:
-                if current_state == VehicleState.IN_USE:
-                    self.rental_service.terminate_active_rental(
-                        vehicle,
-                        "Rental terminated due to critically low battery"
-                    )
-
+    def _handle_emergency_lock(self, vehicle, event):
+        # Recovery from emergency lock
+        if vehicle.state == VehicleState.EMERGENCY_LOCK:
+            if event.temperature <= 60 and event.battery >= 5:
                 if StateMachine.validate(vehicle.state, VehicleState.MAINTENANCE):
                     old_state, new_state = StateMachine.transition(
                         vehicle,
                         VehicleState.MAINTENANCE
                     )
-
                     self.audit.record(
                         entity_id=vehicle.id,
                         action=f"{old_state.name} -> {new_state.name}",
-                        reason="Maintenance required: Battery critically low"
+                        reason="Emergency resolved, moved to maintenance"
                     )
+
+    def process_telemetry_event(self, vehicle, event):
+        with vehicle.lock:
+            self._sync_telemetry(vehicle, event)
+
+            # maintenance vehicles remain isolated from regular telemetry flow
+            if vehicle.state == VehicleState.MAINTENANCE:
                 return
 
-            # Recovery from emergency lock
-            if current_state == VehicleState.EMERGENCY_LOCK:
-                if event.temperature <= 60 and event.battery >= 5:
-                    if StateMachine.validate(current_state, VehicleState.MAINTENANCE):
-                        old_state, new_state = StateMachine.transition(
-                            vehicle,
-                            VehicleState.MAINTENANCE
-                        )
-                        self.audit.record(
-                            entity_id=vehicle.id,
-                            action=f"{old_state.name} -> {new_state.name}",
-                            reason="Emergency resolved, moved to maintenance"
-                        )
+            if self._handle_emergency_lock(vehicle, event):
+                return
+            
+            if self._handle_unauthorized_movement(vehicle, event):
+                return
+            
+            if self._handle_city_restrictions(vehicle, event):
+                return
+            
+            if self._handle_overheating(vehicle, event):
+                return
+            
+            self._handle_critical_battery(vehicle, event)
