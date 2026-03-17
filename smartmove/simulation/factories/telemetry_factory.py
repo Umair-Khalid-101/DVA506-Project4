@@ -21,17 +21,27 @@ class TelemetryFactory:
 
     @staticmethod
     def next_snapshot(vehicle, previous: TelemetrySnapshot) -> TelemetrySnapshot:
-
+        # Vehicle in active trip
         if vehicle.state == VehicleState.IN_USE:
-            speed = random.uniform(5, 25)
+            speed = random.uniform(8, 28)
+            battery_drain = random.uniform(0.8, 2.5)
+            temp_change = random.uniform(0.3, 1.5)
+
+            # occasional overheating spike while in use
+            if random.random() < 0.03:
+                temp_change += random.uniform(15, 35)
+
+        # Vehicle locked / emergency / maintenance / available
         else:
             speed = 0.0
+            battery_drain = random.uniform(0.0, 0.03)
+            temp_change = random.uniform(-0.2, 0.2)
 
-        lat_shift = random.uniform(-0.00005, 0.00005)
-        lon_shift = random.uniform(-0.00005, 0.00005)
+        lat_shift = random.uniform(-0.00005, 0.00005) if speed > 0 else 0.0
+        lon_shift = random.uniform(-0.00005, 0.00005) if speed > 0 else 0.0
 
-        new_battery = max(previous.battery - random.uniform(0.02, 0.08), 0)
-        new_temperature = previous.temperature + random.uniform(-0.2, 0.6)
+        new_battery = max(previous.battery - battery_drain, 0)
+        new_temperature = max(15.0, previous.temperature + temp_change)
 
         return TelemetrySnapshot(
             latitude=previous.latitude + lat_shift,
@@ -51,5 +61,5 @@ class TelemetryFactory:
             speed=snapshot.speed,
             battery=snapshot.battery,
             temperature=snapshot.temperature,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now()
         )
