@@ -29,7 +29,7 @@ services:
       - .:/workspace
     environment:
       SONAR_HOST_URL: http://sonarqube:9000
-      SONAR_TOKEN: squ_e40fb6f4a5083654960cc07f377a04a88649fcbc
+      SONAR_TOKEN: squ_f881571f284b267d798f7e8284f07b6cc21919fa
 
 volumes:
   sonarqube_data:
